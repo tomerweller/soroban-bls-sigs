@@ -1,6 +1,6 @@
 # BLS Signature Custom Account
 
-This is a variant of the [BLS Signature Custom Account](https://github.com/stellar/stellar-custom-accounts) project, but with an arbitrary number of keys and on-chain on-demand public key aggregation.  
+This is a variant of the [BLS Signature Custom Account](https://github.com/stellar/soroban-examples/tree/main/bls_signature) example, but with an arbitrary number of keys and on-chain on-demand public key aggregation.  
 
 ## ⚠️ WARNING: Demonstration Use Only
 
