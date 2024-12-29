@@ -1,0 +1,27 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Soroban contract artifacts
+/.soroban
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Debug files
+*.log
+
+# Environment files
+.env
+.env.local 
+
+# Snapshot files
+test_snapshots
