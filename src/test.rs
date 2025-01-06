@@ -2,11 +2,10 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::BytesN as _,
-    vec, BytesN, Env, Vec
+    testutils::BytesN as _, vec, BytesN, Env, IntoVal, Vec
 };
 
-use crate::{bls_sigs::{sign_and_aggregate, KeyPair, PublicKey, SecretKey}, AccError, IncrementContract, IncrementContractClient};
+use crate::{bls_sigs::{sign_and_aggregate, KeyPair, PublicKey, SecretKey}, AccError, IncrementContract, IncrementContractClient, WrappedSignature};
 use blst::min_pk::SecretKey as BLST_SecretKey;
 
 
@@ -21,6 +20,56 @@ pub fn create_keypair(e: &Env, ikm: [u8; 32]) -> KeyPair {
         pk: BytesN::from_array(&e, &pk.serialize()),
     }
 }
+/// test that the contract authorizes a signature that was aggregated from a subset of the public keys
+#[test]
+fn test_correct_aggregation() {
+    let e: Env = Env::default();
+    let client = IncrementContractClient::new(&e, &e.register(IncrementContract {}, ()));
+
+    //create 3 keypairs
+    let kp1 = create_keypair(&e, rand::random());
+    let kp2 = create_keypair(&e, rand::random());
+    let kp3 = create_keypair(&e, rand::random());
+    let pks = vec![&e, kp1.pk, kp2.pk, kp3.pk];
+    client.init(&pks);
+
+    let payload = BytesN::random(&e);
+    let wrapped_sig = WrappedSignature {
+        owner_mask: vec![&e, true, false, true],
+        signature: sign_and_aggregate(&e, &payload.clone().into(), &vec![&e, kp1.sk, kp3.sk]),
+    };
+
+    e.try_invoke_contract_check_auth::<AccError>(
+        &client.address, 
+        &payload, 
+        wrapped_sig.into_val(&e), 
+        &vec![&e]).unwrap();
+}
+
+/// test that the contract does not authorize a signature that does not match the aggregated subset of public keys
+#[test]
+fn test_incorrect_aggregation() {
+    let e: Env = Env::default();
+    let client = IncrementContractClient::new(&e, &e.register(IncrementContract {}, ()));
+
+    let kp1 = create_keypair(&e, rand::random());
+    let kp2 = create_keypair(&e, rand::random());
+    let kp3 = create_keypair(&e, rand::random());
+    let pks = vec![&e, kp1.pk, kp2.pk, kp3.pk];
+    client.init(&pks);
+
+    let payload = BytesN::random(&e);
+    let wrapped_sig = WrappedSignature {
+        owner_mask: vec![&e, true, true, false],
+        signature: sign_and_aggregate(&e, &payload.clone().into(), &vec![&e, kp1.sk, kp3.sk]),
+    };
+
+    let _err = e.try_invoke_contract_check_auth::<AccError>(
+        &client.address, 
+        &payload, 
+        wrapped_sig.into_val(&e), 
+        &vec![&e]).unwrap_err();
+}
 
 fn test_with_keys(e: &Env, client: &IncrementContractClient, public_keys: &Vec<PublicKey>, secret_keys: &Vec<SecretKey>) { 
     
@@ -31,9 +80,25 @@ fn test_with_keys(e: &Env, client: &IncrementContractClient, public_keys: &Vec<P
     }
     
     let payload = BytesN::random(&e);
-    let sig_val = sign_and_aggregate(&e, &payload.clone().into(), secret_keys).to_val();
+    let sig_val: BytesN<192>= sign_and_aggregate(&e, &payload.clone().into(), secret_keys);
+    
+    //create a mask with true for all keys
+    let mut owner_mask: Vec<bool> = vec![&e];
+    for _i in 0..public_keys.len() {
+        owner_mask.push_back(true);
+    }
+
+    let wrapped_sig = WrappedSignature {
+        owner_mask: owner_mask.clone(),
+        signature: sig_val.clone(),
+    };
+
     e.cost_estimate().budget().reset_default();
-    if let Err(err) = e.try_invoke_contract_check_auth::<AccError>(&client.address, &payload, sig_val, &vec![&e]) {
+    if let Err(err) = e.try_invoke_contract_check_auth::<AccError>(
+        &client.address, 
+        &payload, 
+        wrapped_sig.into_val(e), 
+        &vec![&e]) {
         std::println!("Auth invocation failed with error: {:?}", err);
         std::println!("{:#?}", e.cost_estimate().resources());
         std::println!("{:#?}", e.cost_estimate().budget());
@@ -66,7 +131,7 @@ fn test() {
         secret_keys.push_back(kp.sk);
     }
 
-    for i in 497..520 {
+    for i in 540..560 {
         std::println!("testing with {:#?} keys", i);
         let pks = public_keys.slice(0..i as u32);
         let sks = secret_keys.slice(0..i as u32);

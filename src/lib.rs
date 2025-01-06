@@ -7,7 +7,7 @@
 //! of possesion for the public key described in section 3.3).
 #![no_std]
 use soroban_sdk::{
-    auth::{Context, CustomAccountInterface}, contract, contracterror, contractimpl, contracttype, crypto::Hash, log, Bytes, BytesN, Env, Vec
+    auth::{Context, CustomAccountInterface}, contract, contracterror, contractimpl, contracttype, crypto::Hash, log, vec, Bytes, BytesN, Env, Vec
 };
 
 #[contract]
@@ -28,13 +28,21 @@ pub enum AccError {
     InvalidSignature = 1,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrappedSignature {
+    pub owner_mask: Vec<bool>,
+    pub signature: BytesN<192>
+}
+
+
 mod bls_sigs;
 use bls_sigs::{aggregate_pk_bytes, verify_bls_signature, PublicKey, DST};
 
 #[contractimpl]
 impl IncrementContract {
     pub fn init(env: Env, owners: Vec<PublicKey>) {
-        log!(&env, "Init with {} owners", owners.len());
+        log!(&env, "Init with owners", owners.len());
         env.storage().persistent().set(&DataKey::Owners, &owners);
         env.storage()
             .instance()
@@ -55,7 +63,7 @@ impl IncrementContract {
 
 #[contractimpl]
 impl CustomAccountInterface for IncrementContract {
-    type Signature = BytesN<192>;
+    type Signature = WrappedSignature;
     type Error = AccError;
 
     #[allow(non_snake_case)]
@@ -65,14 +73,27 @@ impl CustomAccountInterface for IncrementContract {
         agg_sig: Self::Signature,
         _auth_contexts: Vec<Context>,
     ) -> Result<(), AccError> {
-        log!(&env, "check_auth");
+        log!(&env, "check_auth", agg_sig);
         
-        // Retrieve the aggregated pubkey and the DST from storage
+        //get owners from storage
         let owners: Vec<PublicKey> = env.storage().persistent().get(&DataKey::Owners).unwrap();
-        let agg_pk: BytesN<96> = aggregate_pk_bytes(&env, &owners);
+
+        //apply mask to owners to get signers
+        let mut signers: Vec<PublicKey> = vec![&env];
+        for i in 0..owners.len() {
+            if agg_sig.owner_mask.get(i).unwrap() {
+                signers.push_back(owners.get(i).unwrap());
+            }
+        }
+        log!(&env, "Number of signers", signers.len());
+        
+        //aggregate the signers
+        let agg_pk: BytesN<96> = aggregate_pk_bytes(&env, &signers);
+        log!(&env, "agg_pk", agg_pk);
+
 
         // Use the standalone verification function
-        verify_bls_signature(&env, &signature_payload.into(), &agg_pk, &agg_sig)
+        verify_bls_signature(&env, &signature_payload.into(), &agg_pk, &agg_sig.signature)
     }
 }
 
