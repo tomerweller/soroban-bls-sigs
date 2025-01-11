@@ -100,9 +100,11 @@ fn test_with_keys(e: &Env, client: &IncrementContractClient, public_keys: &Vec<P
         wrapped_sig.into_val(e), 
         &vec![&e]) {
         std::println!("Auth invocation failed with error: {:?}", err);
-        std::println!("{:#?}", e.cost_estimate().resources());
-        std::println!("{:#?}", e.cost_estimate().budget());
+        // std::println!("Instructions: {:#?}", e.cost_estimate().resources().instructions);
+        // std::println!("{:#?}", e.cost_estimate().budget());
     }
+    std::println!("Instructions: {:#?}", e.cost_estimate().resources().instructions);
+
 }
 
 mod wasm_contract {
